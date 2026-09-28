@@ -1,9 +1,8 @@
 from pathlib import Path
-from loader import load_train
+from src.data.loader import load_train
 import polars as pl
 import re
 from multiprocessing import Pool, cpu_count
-import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import pymorphy3
@@ -14,44 +13,30 @@ def init_worker():
     STOP_WORDS = set(stopwords.words("russian"))
 
 class Preprocessor:
-    def __init__(self, raw_path):
-        self.raw_df = load_train(raw_path)[:200]
+    def __init__(self, train_df):
+        self.raw_df = train_df
 
     def _normalize_text(self, text: str) -> str:
+        """Очистка строки от спецсимволов и стоп-слов.
+        Лемматизация не была применена чтобы ускорить обучение (нет GPU :( )
         """
-        Нормализация заданного текста.
-        """
-        if text is None:
+        if not text:
             return ""
-
-        # Очистка от спец символов
-        cleaned =  re.sub(r'[^0-9а-яА-ЯёЁ\s]', '', text)
-
-        # Перевод в нижний регистр
-        lowered = cleaned.lower()
-
-        # Токенизация
-        tokens = word_tokenize(lowered, language="russian")
-
-        # Удаление стоп-слов
-        morph = pymorphy3.MorphAnalyzer()
-        lemmas = []
-        for tok in tokens:
-            if tok not in STOP_WORDS:
-                lemma = morph.parse(tok)[0].normal_form
-                lemmas.append(lemma)
-
-        return " ".join(lemmas)
+        text = re.sub(r'[^0-9а-яА-ЯёЁ\s]', ' ', str(text)).lower()
+        tokens = [t for t in text.split() if t not in STOP_WORDS and len(t) > 1]
+        return " ".join(tokens)
 
     def _process_series_parallel(self, series_data: list) -> list:
         """Обрабатывает список текстов в отдельном процессе"""
         return [self._normalize_text(text) for text in series_data]
 
-    def preprocess_text_features(self, text_cols: list[str]) -> pl.DataFrame:
-        """
-        Параллельно нормализует текстовые признаки и возвращает датафрейм с новыми значениями.
-        """
-        result_df = self.raw_df[text_cols]
+    def preprocess_text_features(self, text_cols: list[str], keep_cols: list[str]) -> pl.DataFrame:
+        """Параллельно нормализует текстовые признаки и возвращает датафрейм с новыми значениями."""
+        if keep_cols is None:
+            keep_cols = []
+
+        cols_to_use = [c for c in text_cols + keep_cols if c in self.raw_df.columns]
+        result_df = self.raw_df[cols_to_use]
 
         # кол-во доступных ядер процессора
         num_cores = cpu_count()
@@ -74,12 +59,10 @@ class Preprocessor:
                 pl.Series(name=f"clean_{col}", values=processed)
             )
 
-        return result_df.drop(text_cols)
+        result_df = result_df.drop(text_cols)
+
+        return result_df
 
     def preprocess_numeric_features(self, numeric_cols):
+        # В решении использовались только текстовые признаки
         pass
-
-# Вид услуги убрать
-if __name__ == "__main__":
-    p = Preprocessor(Path("../../data/train.parquet"))
-    print(p.preprocess_text_features(["search_query", "item_description_raw"]))

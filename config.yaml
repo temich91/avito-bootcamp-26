@@ -1,0 +1,36 @@
+data:
+  train_path: data/train.parquet
+  queries_path: data/benchmark_queries.parquet
+  items_path: data/benchmark_items.parquet
+  output_dir: outputs
+
+text:
+  query_cols: ["search_query", "search_infm_params_text"]
+  item_cols: ["item_title_raw", "item_description_raw", "item_infm_params_text"]
+  max_length: 256
+
+retrieval:
+  bm25:
+    k1: 2.0
+    b: 0.75
+  dense:
+    model_name: "intfloat/multilingual-e5-base"
+    batch_size: 64
+    normalize: true
+  hybrid:
+    method: "rrf"
+    rrf_k: 60
+    alpha: 0.4
+
+ltr:
+  top_k_candidates: 200
+  params:
+    objective: "lambdarank"
+    metric: "ndcg"
+    learning_rate: 0.05
+    num_leaves: 31
+    n_estimators: 300
+
+eval:
+  recall_at: 50
+  val_ratio: 0.15
